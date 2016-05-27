@@ -52,20 +52,20 @@ QVector3D Widget::rotated(const QVector3D &v, const QVector3D &u, double a) {
 }
 
 QVector3D vAbs(const QVector3D &v) {
-    return QVector3D(abs(v.x()), abs(v.y()), abs(v.z()));
+    return QVector3D(fabs(v.x()), fabs(v.y()), fabs(v.z()));
 }
 
 QVector3D vMax(const QVector3D &v, float m) {
-    return QVector3D(qMax(v.x(), m), qMax(v.y(), m), qMax(v.z(), m));
+    return QVector3D(std::max(v.x(), m), std::max(v.y(), m), std::max(v.z(), m));
 }
 
 float sdBox(const QVector3D &p, const QVector3D &b) {
     QVector3D d = vAbs(p) - b;
-    return qMin(qMax(d.x(), qMax(d.y(), d.z())), 0.0f) + vMax(d, 0).length();
+    return std::min(std::max(d.x(), std::max(d.y(), d.z())), 0.0f) + vMax(d, 0.0f).length();
 }
 
 float Widget::map(const QVector3D &p) {
-    return qMin(sdBox(p - QVector3D(0.5, 0.25, 1.0), QVector3D(0.25, 0.25, 0.25)), qAbs(p.y()));
+    return std::min(std::min(sdBox(p - QVector3D(0.5, 0.25, 1.0), QVector3D(0.25, 0.25, 0.25)), qAbs(p.y())), (p - QVector3D(0.35, 1.0, 0.75)).length() -  0.25f);
 }
 
 QVector3D Widget::march(const QVector3D &origin, const QVector3D &ray) {
@@ -138,6 +138,7 @@ void Widget::paintEvent(QPaintEvent *) {
     p.setRenderHint(QPainter::Antialiasing);
 
     p.translate(rect().center());
+    p.scale(1, -1);
 
     static const int numberOfRays = 1000;
     static const double scale = 100;
@@ -147,7 +148,7 @@ void Widget::paintEvent(QPaintEvent *) {
 
     for (int i = 0; i < numberOfRays; i++) {
         QVector3D ray = rotated(perp, normal, (double)i / (numberOfRays - 1) * 2 * M_PI);
-        QVector3D p = project(march(QVector3D(0, 2, 0), ray));
+        QVector3D p = project(march(QVector3D(0, 1, 0), ray));
 
         if (i == 0)
             path.moveTo(firstPoint = p.toPointF() * scale);
