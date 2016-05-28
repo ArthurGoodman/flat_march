@@ -11,20 +11,30 @@ Widget::Widget(QWidget *parent)
     qsrand(QTime::currentTime().msec());
 
     init();
+
+    setMouseTracking(true);
+
+    centerCursor();
 }
 
 Widget::~Widget() {
 }
 
 void Widget::init() {
-    leftPressed = rightPressed = false;
+    aPressed = dPressed = false;
 
     updateNormal();
     alpha = 0;
+
+    position = QVector3D(0, 1, 0);
 }
 
 QVector3D Widget::randomPerpendicular(const QVector3D &v) {
     return QVector3D::crossProduct(randomVector(), v).normalized();
+}
+
+QVector3D Widget::perpendicular(const QVector3D &v) {
+    return QVector3D::crossProduct(QVector3D(0, 1, 0), v).normalized();
 }
 
 QVector3D Widget::randomVector() {
@@ -33,7 +43,7 @@ QVector3D Widget::randomVector() {
 
 void Widget::updateNormal() {
     normal = QVector3D(sin(alpha), 0, cos(alpha));
-    perp = randomPerpendicular(normal);
+    perp = perpendicular(normal);
 }
 
 QVector2D Widget::project(const QVector3D &v) {
@@ -65,7 +75,29 @@ float sdBox(const QVector3D &p, const QVector3D &b) {
 }
 
 float Widget::map(const QVector3D &p) {
-    return std::min(std::min(sdBox(p - QVector3D(0.5, 0.25, 1.0), QVector3D(0.25, 0.25, 0.25)), qAbs(p.y())), (p - QVector3D(0.35, 1.0, 0.75)).length() -  0.25f);
+    return std::min(
+        std::min(
+            std::min(
+                std::min(
+                    std::min(
+                        std::min(
+                            std::min(
+                                (p - QVector3D(1.5, 2.0, 2.0)).length() - 0.5f,
+                                sdBox(p - QVector3D(0.5, 0.5, 1.0), QVector3D(0.5, 0.5, 0.5))),
+                            sdBox(p - QVector3D(-0.5, 2.0, -0.75), QVector3D(0.5, 0.5, 0.5))),
+                        sdBox(p - QVector3D(1.0, 4.0, 2.0), QVector3D(0.5, 0.5, 0.5))),
+                    sdBox(p - QVector3D(-1.0, 6.0, 0.0), QVector3D(0.5, 0.5, 0.5))),
+                sdBox(p - QVector3D(0.0, 8.0, -1.0), QVector3D(0.5, 0.5, 0.5))),
+            sdBox(p - QVector3D(1.0, 10.0, 1.0), QVector3D(0.5, 0.5, 0.5))),
+        p.y());
+}
+
+QVector3D Widget::normalToMap(const QVector3D &p) {
+    float e = 1e-3;
+    return QVector3D(map(p + QVector3D(e, 0, 0)) - map(p - QVector3D(e, 0, 0)),
+                     map(p + QVector3D(0, e, 0)) - map(p - QVector3D(0, e, 0)),
+                     map(p + QVector3D(0, 0, e)) - map(p - QVector3D(0, 0, e)))
+        .normalized();
 }
 
 QVector3D Widget::march(const QVector3D &origin, const QVector3D &ray) {
@@ -76,7 +108,7 @@ QVector3D Widget::march(const QVector3D &origin, const QVector3D &ray) {
     QVector3D p = origin;
 
     for (int i = 0; i < maxIt; i++) {
-        float d = map(p);
+        float d = fabs(map(p));
 
         if (d < epsilon || d > maxDist)
             break;
@@ -87,16 +119,35 @@ QVector3D Widget::march(const QVector3D &origin, const QVector3D &ray) {
     return p;
 }
 
-void Widget::timerEvent(QTimerEvent *) {
-    update();
+void Widget::centerCursor() {
+    QCursor c = cursor();
+    c.setPos(mapToGlobal(rect().center()));
+    c.setShape(Qt::BlankCursor);
+    setCursor(c);
+}
 
-    if (leftPressed) {
-        alpha -= deltaAlpha;
-        updateNormal();
-    } else if (rightPressed) {
-        alpha += deltaAlpha;
-        updateNormal();
+void Widget::timerEvent(QTimerEvent *) {
+    static const float gravityForce = 0.005;
+
+    velocity += QVector3D(0, -gravityForce, 0);
+
+    if (aPressed)
+        velocity -= QVector3D(perp.x(), 0, perp.z()).normalized() * gravityForce / 2 * (onTheGround ? 10 : 1);
+    else if (dPressed)
+        velocity += QVector3D(perp.x(), 0, perp.z()).normalized() * gravityForce / 2 * (onTheGround ? 10 : 1);
+
+    position += velocity;
+
+    QVector3D hit = march(position, velocity);
+
+    if ((height = (hit - position).length()) < circleRadius) {
+        position += normalToMap(hit) * (circleRadius - (hit - position).length());
+        velocity /= 100;
     }
+
+    onTheGround = height < circleRadius + 0.1;
+
+    update();
 }
 
 void Widget::keyPressEvent(QKeyEvent *e) {
@@ -109,26 +160,38 @@ void Widget::keyPressEvent(QKeyEvent *e) {
         isFullScreen() ? showNormal() : showFullScreen();
         break;
 
-    case Qt::Key_Left:
-        leftPressed = true;
+    case Qt::Key_A:
+        aPressed = true;
         break;
 
-    case Qt::Key_Right:
-        rightPressed = true;
+    case Qt::Key_D:
+        dPressed = true;
+        break;
+
+    case Qt::Key_Space:
+        if (onTheGround)
+            velocity += QVector3D(0, 0.15, 0);
         break;
     }
 }
 
 void Widget::keyReleaseEvent(QKeyEvent *e) {
     switch (e->key()) {
-    case Qt::Key_Left:
-        leftPressed = false;
+    case Qt::Key_A:
+        aPressed = false;
         break;
 
-    case Qt::Key_Right:
-        rightPressed = false;
+    case Qt::Key_D:
+        dPressed = false;
         break;
     }
+}
+
+void Widget::mouseMoveEvent(QMouseEvent *e) {
+    alpha += (double)(e->x() - width() / 2) / width();
+    updateNormal();
+
+    centerCursor();
 }
 
 void Widget::paintEvent(QPaintEvent *) {
@@ -137,18 +200,18 @@ void Widget::paintEvent(QPaintEvent *) {
 
     p.setRenderHint(QPainter::Antialiasing);
 
-    p.translate(rect().center());
-    p.scale(1, -1);
-
     static const int numberOfRays = 1000;
     static const double scale = 100;
+
+    p.translate(rect().center());
+    p.scale(1, -1);
 
     QPainterPath path;
     QPointF firstPoint;
 
     for (int i = 0; i < numberOfRays; i++) {
         QVector3D ray = rotated(perp, normal, (double)i / (numberOfRays - 1) * 2 * M_PI);
-        QVector3D p = project(march(QVector3D(0, 1, 0), ray));
+        QVector3D p = project(march(position, ray) - position);
 
         if (i == 0)
             path.moveTo(firstPoint = p.toPointF() * scale);
@@ -159,4 +222,6 @@ void Widget::paintEvent(QPaintEvent *) {
     path.lineTo(firstPoint);
 
     p.strokePath(path, QPen(Qt::black));
+
+    p.drawEllipse(QPointF(), circleRadius * scale, circleRadius * scale);
 }
