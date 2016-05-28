@@ -22,6 +22,7 @@ Widget::~Widget() {
 
 void Widget::init() {
     aPressed = dPressed = false;
+    onTheGround = false;
 
     updateNormal();
     alpha = 0;
@@ -138,14 +139,14 @@ void Widget::timerEvent(QTimerEvent *) {
 
     position += velocity;
 
-    QVector3D hit = march(position, velocity);
+    QVector3D hit = march(position, velocity.normalized());
 
     if ((height = (hit - position).length()) < circleRadius) {
-        position += normalToMap(hit) * (circleRadius - (hit - position).length());
+        position += normalToMap(hit) * (circleRadius - height);
         velocity /= 100;
     }
 
-    onTheGround = height < circleRadius + 0.1;
+    onTheGround = height < circleRadius + 0.15;
 
     update();
 }
